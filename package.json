@@ -1,0 +1,25 @@
+{
+  "name": "daily-marketing-report",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serverless daily Meta Ads + HubSpot marketing report for Powerhouse Gym, emailed via Resend. Headless Vercel Cron service.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^15.5.20",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "resend": "^4.6.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "typescript": "^5.8.3"
+  }
+}

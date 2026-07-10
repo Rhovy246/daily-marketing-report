@@ -1,0 +1,102 @@
+/**
+ * Timezone helpers for "yesterday in America/New_York".
+ *
+ * We avoid a date library (keeping dependencies minimal) and instead use the
+ * built-in Intl timezone database to resolve the correct UTC instants for the
+ * gym's local day — which handles EST/EDT automatically.
+ */
+
+const TIME_ZONE = "America/New_York";
+
+/**
+ * The offset (in milliseconds) of `timeZone` from UTC at a given instant.
+ * For America/New_York this is -4h (EDT) or -5h (EST) depending on the date.
+ */
+function timeZoneOffsetMillis(timeZone: string, date: Date): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = dtf.formatToParts(date);
+  const map: Record<string, string> = {};
+  for (const p of parts) map[p.type] = p.value;
+  // `hour` can come back as "24" at midnight in some environments; normalize.
+  const hour = map.hour === "24" ? "00" : map.hour;
+  const asUTC = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(hour),
+    Number(map.minute),
+    Number(map.second),
+  );
+  return asUTC - date.getTime();
+}
+
+/** Convert a wall-clock time in America/New_York to a UTC epoch (ms). */
+function etWallTimeToUtcMillis(
+  year: number,
+  month: number, // 1-12
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  ms: number,
+): number {
+  const guess = Date.UTC(year, month - 1, day, hour, minute, second, ms);
+  const offset = timeZoneOffsetMillis(TIME_ZONE, new Date(guess));
+  return guess - offset;
+}
+
+export interface YesterdayRange {
+  /** Start of yesterday, 00:00:00.000 ET, as a UTC epoch in milliseconds. */
+  startMillis: number;
+  /** End of yesterday, 23:59:59.999 ET, as a UTC epoch in milliseconds. */
+  endMillis: number;
+  /** Human-friendly label like "Wednesday, July 9, 2026" (ET). */
+  label: string;
+}
+
+/**
+ * Compute yesterday's date range in America/New_York, returned as UTC epoch
+ * millisecond bounds (the format HubSpot's createdate filters expect).
+ */
+export function getYesterdayRangeET(now: Date = new Date()): YesterdayRange {
+  // Today's ET calendar date.
+  const todayParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const map: Record<string, string> = {};
+  for (const p of todayParts) map[p.type] = p.value;
+
+  // Step back one calendar day using a UTC anchor (safe across month/year ends).
+  const anchor = new Date(
+    Date.UTC(Number(map.year), Number(map.month) - 1, Number(map.day)),
+  );
+  anchor.setUTCDate(anchor.getUTCDate() - 1);
+  const y = anchor.getUTCFullYear();
+  const m = anchor.getUTCMonth() + 1;
+  const d = anchor.getUTCDate();
+
+  const startMillis = etWallTimeToUtcMillis(y, m, d, 0, 0, 0, 0);
+  const endMillis = etWallTimeToUtcMillis(y, m, d, 23, 59, 59, 999);
+
+  const label = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(new Date(startMillis));
+
+  return { startMillis, endMillis, label };
+}
