@@ -179,9 +179,7 @@ export async function buildReportPdf(
   }
   if (hubspot) {
     kv("New contacts", formatInt(hubspot.newContactCount));
-    kv("New deals", formatInt(hubspot.newDealCount));
     kv("Contacts from paid social", formatInt(hubspot.paidSocialContactCount));
-    kv("Total deal value", formatMoney(hubspot.totalDealValue));
   } else {
     kv("HubSpot CRM data", "Unavailable");
   }

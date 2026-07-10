@@ -50,7 +50,7 @@ STRICT RULES:
 
 EMAIL STRUCTURE (in this order):
 1. A short greeting line and the date the report covers.
-2. Topline summary: total ad spend, total leads, cost per lead, new contacts, and new deals — as a small set of clearly labeled figures.
+2. Topline summary: total ad spend, total leads, cost per lead, and new contacts — as a small set of clearly labeled figures.
 3. A per-campaign table (campaign name, spend, leads, cost per lead, clicks, click-through rate). Use a simple bordered HTML table with inline styles. If there were no campaigns with activity, say so.
 4. A one-line funnel: Meta ad spend -> Meta leads -> HubSpot contacts from paid social. Make the connection explicit.
 5. Flags: call out plainly anything that is roughly 20% or more above or below the 7-day daily average (spend, leads, or cost per lead). If nothing is notably off, say "Nothing unusual today." State the direction (up/down) and rough magnitude in plain words.

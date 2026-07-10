@@ -6,7 +6,7 @@ No database, no UI — just a Vercel Cron job that runs once each morning.
 Every day at **8:00 AM Eastern** it:
 
 1. Fetches **yesterday's Meta (Facebook/Instagram) ad performance** and a 7-day baseline.
-2. Fetches **yesterday's HubSpot CRM activity** (new contacts + deals).
+2. Fetches **yesterday's HubSpot CRM activity** (new contacts).
 3. Has **Claude** write a plain-English analysis email.
 4. Sends it to the boss via **Resend**.
 
@@ -35,7 +35,7 @@ Vercel Cron ──GET──▶ /api/daily-report
 | --- | --- |
 | `app/api/daily-report/route.ts` | Main handler (GET). Auth, orchestration, resilience, alerts. |
 | `lib/meta.ts` | Meta Graph API v25.0 client — campaign insights, lead extraction, cost-per-lead. |
-| `lib/hubspot.ts` | HubSpot CRM v3 search — new contacts & deals, paid-social attribution. |
+| `lib/hubspot.ts` | HubSpot CRM v3 search — new contacts, paid-social attribution. |
 | `lib/analyze.ts` | Anthropic Messages API (`claude-sonnet-4-6`) — turns data into an email. |
 | `lib/email.ts` | Resend — report send + failure alerts. |
 | `lib/dates.ts` | "Yesterday in America/New_York" (DST-aware, no date library). |
@@ -67,7 +67,7 @@ inline notes on where to generate each one.
 | --- | --- |
 | `META_ACCESS_TOKEN` | Meta System User token with `ads_read`. |
 | `META_AD_ACCOUNT_ID` | Ad account ID (`1234567890` or `act_1234567890`). |
-| `HUBSPOT_ACCESS_TOKEN` | HubSpot Private App token (`crm.objects.contacts.read`, `crm.objects.deals.read`). |
+| `HUBSPOT_ACCESS_TOKEN` | HubSpot Private App token (`crm.objects.contacts.read`). |
 | `ANTHROPIC_API_KEY` | Anthropic API key. |
 | `RESEND_API_KEY` | Resend API key. |
 | `REPORT_TO_EMAIL` | Recipient of the daily report (the boss). |

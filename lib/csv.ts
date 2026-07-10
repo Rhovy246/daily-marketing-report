@@ -44,9 +44,7 @@ export function buildReportCsv(input: ReportArtifactInput): string {
   }
   if (hubspot) {
     lines.push(row("New contacts", hubspot.newContactCount));
-    lines.push(row("New deals", hubspot.newDealCount));
     lines.push(row("Contacts from paid social", hubspot.paidSocialContactCount));
-    lines.push(row("Total deal value (USD)", round2(hubspot.totalDealValue)));
   } else {
     lines.push(row("HubSpot CRM data", "UNAVAILABLE"));
   }

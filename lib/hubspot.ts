@@ -4,9 +4,13 @@ import { getYesterdayRangeET } from "@/lib/dates";
 /**
  * HubSpot CRM client.
  *
- * Pulls contacts and deals created yesterday (America/New_York) via the CRM
- * search endpoints, and counts how many contacts came from paid social so the
- * report can connect Meta ad spend to CRM leads.
+ * Pulls contacts created yesterday (America/New_York) via the CRM search
+ * endpoint, and counts how many came from paid social so the report can connect
+ * Meta ad spend to CRM leads.
+ *
+ * Deals are intentionally NOT fetched — Powerhouse doesn't track deals in
+ * HubSpot, so the app only requires the `crm.objects.contacts.read` scope. If
+ * that changes later, re-add a deals search alongside the contacts search.
  *
  * Uses the CRM v3 search API directly via fetch (no SDK). Search endpoints are
  * paginated with an `after` cursor; page sizes cap at 100.
@@ -41,16 +45,6 @@ const ContactResultSchema = z.object({
   }),
 });
 
-const DealResultSchema = z.object({
-  id: z.string(),
-  properties: z.object({
-    dealname: z.string().nullish(),
-    amount: z.string().nullish(),
-    dealstage: z.string().nullish(),
-    createdate: z.string().nullish(),
-  }),
-});
-
 const SearchPageSchema = z.object({
   total: z.number().optional(),
   results: z.array(z.unknown()),
@@ -73,25 +67,13 @@ export interface HubSpotContact {
   createdAt: string | null;
 }
 
-export interface HubSpotDeal {
-  id: string;
-  dealName: string | null;
-  amount: number | null;
-  dealStage: string | null;
-  createdAt: string | null;
-}
-
 export interface HubSpotData {
   /** ET label for the day the data covers, e.g. "Wednesday, July 9, 2026". */
   dateLabel: string;
   contacts: HubSpotContact[];
-  deals: HubSpotDeal[];
   newContactCount: number;
-  newDealCount: number;
   /** Contacts whose source indicates paid social / Facebook / Instagram. */
   paidSocialContactCount: number;
-  /** Total value of deals created yesterday (sum of `amount`). */
-  totalDealValue: number;
 }
 
 function isPaidSocial(contact: HubSpotContact): boolean {
@@ -104,11 +86,11 @@ function isPaidSocial(contact: HubSpotContact): boolean {
 }
 
 /**
- * Run a paginated CRM search. `objectType` is "contacts" or "deals".
+ * Run a paginated CRM search for objects created yesterday.
  * Returns the raw result objects across all pages.
  */
 async function searchCreatedYesterday(
-  objectType: "contacts" | "deals",
+  objectType: "contacts",
   properties: string[],
   token: string,
   startMillis: number,
@@ -169,16 +151,10 @@ async function searchCreatedYesterday(
   return results;
 }
 
-function parseAmount(amount: string | null | undefined): number | null {
-  if (amount === null || amount === undefined || amount === "") return null;
-  const n = parseFloat(amount);
-  return Number.isFinite(n) ? n : null;
-}
-
 /**
- * Fetch yesterday's new contacts and deals from HubSpot. Throws on any hard
- * failure so the caller can catch it and mark HubSpot data unavailable while
- * still sending the rest of the report.
+ * Fetch yesterday's new contacts from HubSpot. Throws on any hard failure so
+ * the caller can catch it and mark HubSpot data unavailable while still sending
+ * the rest of the report.
  */
 export async function fetchHubSpotData(): Promise<HubSpotData> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
@@ -188,29 +164,20 @@ export async function fetchHubSpotData(): Promise<HubSpotData> {
 
   const { startMillis, endMillis, label } = getYesterdayRangeET();
 
-  const [rawContacts, rawDeals] = await Promise.all([
-    searchCreatedYesterday(
-      "contacts",
-      [
-        "firstname",
-        "lastname",
-        "email",
-        "hs_analytics_source",
-        "hs_latest_source",
-        "createdate",
-      ],
-      token,
-      startMillis,
-      endMillis,
-    ),
-    searchCreatedYesterday(
-      "deals",
-      ["dealname", "amount", "dealstage", "createdate"],
-      token,
-      startMillis,
-      endMillis,
-    ),
-  ]);
+  const rawContacts = await searchCreatedYesterday(
+    "contacts",
+    [
+      "firstname",
+      "lastname",
+      "email",
+      "hs_analytics_source",
+      "hs_latest_source",
+      "createdate",
+    ],
+    token,
+    startMillis,
+    endMillis,
+  );
 
   const contacts: HubSpotContact[] = rawContacts.map((raw) => {
     const parsed = ContactResultSchema.parse(raw);
@@ -225,27 +192,12 @@ export async function fetchHubSpotData(): Promise<HubSpotData> {
     };
   });
 
-  const deals: HubSpotDeal[] = rawDeals.map((raw) => {
-    const parsed = DealResultSchema.parse(raw);
-    return {
-      id: parsed.id,
-      dealName: parsed.properties.dealname ?? null,
-      amount: parseAmount(parsed.properties.amount),
-      dealStage: parsed.properties.dealstage ?? null,
-      createdAt: parsed.properties.createdate ?? null,
-    };
-  });
-
   const paidSocialContactCount = contacts.filter(isPaidSocial).length;
-  const totalDealValue = deals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
 
   return {
     dateLabel: label,
     contacts,
-    deals,
     newContactCount: contacts.length,
-    newDealCount: deals.length,
     paidSocialContactCount,
-    totalDealValue,
   };
 }
