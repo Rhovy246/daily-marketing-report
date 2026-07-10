@@ -16,16 +16,23 @@ function getResend(): Resend {
   return new Resend(apiKey);
 }
 
+export interface ReportAttachment {
+  filename: string;
+  content: Buffer;
+}
+
 export interface SendReportArgs {
   to: string;
   subject: string;
   html: string;
+  attachments?: ReportAttachment[];
 }
 
 export async function sendReport({
   to,
   subject,
   html,
+  attachments,
 }: SendReportArgs): Promise<void> {
   const from = process.env.REPORT_FROM_EMAIL;
   if (!from) {
@@ -33,7 +40,13 @@ export async function sendReport({
   }
 
   const resend = getResend();
-  const { error } = await resend.emails.send({ from, to, subject, html });
+  const { error } = await resend.emails.send({
+    from,
+    to,
+    subject,
+    html,
+    ...(attachments && attachments.length > 0 ? { attachments } : {}),
+  });
 
   if (error) {
     throw new Error(`Resend failed to send report: ${JSON.stringify(error)}`);

@@ -61,6 +61,8 @@ export interface YesterdayRange {
   endMillis: number;
   /** Human-friendly label like "Wednesday, July 9, 2026" (ET). */
   label: string;
+  /** ISO date (yesterday, ET) like "2026-07-09" — used for attachment filenames. */
+  isoDate: string;
 }
 
 /**
@@ -98,5 +100,7 @@ export function getYesterdayRangeET(now: Date = new Date()): YesterdayRange {
     day: "numeric",
   }).format(new Date(startMillis));
 
-  return { startMillis, endMillis, label };
+  const isoDate = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+  return { startMillis, endMillis, label, isoDate };
 }

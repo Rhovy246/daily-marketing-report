@@ -2,8 +2,10 @@ import type { NextRequest } from "next/server";
 import { fetchMetaData, type MetaData } from "@/lib/meta";
 import { fetchHubSpotData, type HubSpotData } from "@/lib/hubspot";
 import { analyze } from "@/lib/analyze";
-import { sendReport, sendFailureAlert } from "@/lib/email";
+import { sendReport, sendFailureAlert, type ReportAttachment } from "@/lib/email";
 import { getYesterdayRangeET } from "@/lib/dates";
+import { buildReportCsv } from "@/lib/csv";
+import { buildReportPdf } from "@/lib/pdf";
 
 /**
  * Daily marketing report handler.
@@ -41,7 +43,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 
   const isTest = request.nextUrl.searchParams.get("test") === "1";
-  const { label: dateLabel } = getYesterdayRangeET();
+  const { label: dateLabel, isoDate } = getYesterdayRangeET();
 
   // --- 2. Fetch data (independent, resilient) ------------------------------
   let meta: MetaData | null = null;
@@ -90,7 +92,12 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     const subject = isTest ? `[TEST] ${email.subject}` : email.subject;
 
-    await sendReport({ to, subject, html: email.html });
+    // Build the PDF + CSV attachments from the same data. These are an
+    // enhancement, not the core deliverable — if either fails to generate we
+    // log it and still send the email (with whatever attachments succeeded).
+    const attachments = await buildAttachments({ dateLabel, meta, hubspot }, isoDate);
+
+    await sendReport({ to, subject, html: email.html, attachments });
 
     console.log(
       `[daily-report] Report sent to ${to}${isTest ? " (test mode)" : ""} for ${dateLabel}.`,
@@ -141,4 +148,44 @@ function requireEnv(name: string): string {
     throw new Error(`Missing ${name} environment variable.`);
   }
   return value;
+}
+
+/**
+ * Build the CSV + PDF attachments. Each is generated independently and never
+ * throws — a failure to build one attachment logs and is skipped so the email
+ * still goes out.
+ */
+async function buildAttachments(
+  data: { dateLabel: string; meta: MetaData | null; hubspot: HubSpotData | null },
+  isoDate: string,
+): Promise<ReportAttachment[]> {
+  const attachments: ReportAttachment[] = [];
+
+  try {
+    const csv = buildReportCsv(data);
+    attachments.push({
+      filename: `marketing-report-${isoDate}.csv`,
+      content: Buffer.from(csv, "utf-8"),
+    });
+  } catch (err) {
+    console.error(
+      "[daily-report] CSV build failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  try {
+    const pdfBytes = await buildReportPdf(data);
+    attachments.push({
+      filename: `marketing-report-${isoDate}.pdf`,
+      content: Buffer.from(pdfBytes),
+    });
+  } catch (err) {
+    console.error(
+      "[daily-report] PDF build failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  return attachments;
 }
