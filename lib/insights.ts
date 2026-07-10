@@ -42,6 +42,14 @@ export interface LeadPacing {
   impliedCplForGoal: number | null;
 }
 
+/** Spend/leads for one location (Miami / Fort Lauderdale / Other). */
+export interface MarketSplitRow {
+  market: string;
+  spend: number;
+  leads: number;
+  costPerLead: number | null;
+}
+
 export interface ReportInsights {
   monthLabel: string;
   targetCpl: number | null;
@@ -50,10 +58,61 @@ export interface ReportInsights {
   overTargetAds: { name: string; campaignName: string; cpl: number }[];
   bestAd: MetaAd | null;
   worstAd: MetaAd | null;
+  /** Top lead-driving ads yesterday (most leads first), for an at-a-glance list. */
+  topAds: MetaAd[];
   zeroLeadAds: { name: string; spend: number }[];
   highFrequencyAds: { name: string; frequency: number }[];
+  /** Spend/leads split by location, derived from MIA/FTL in ad & campaign names. */
+  marketSplit: MarketSplitRow[];
   budget: BudgetPacing | null;
   leads: LeadPacing | null;
+  /** Month-to-date cost per lead (spend / leads so far this month). */
+  mtdCpl: number | null;
+  mtdSpend: number;
+  mtdLeads: number;
+}
+
+type Market = "Miami" | "Fort Lauderdale" | "Other";
+
+/**
+ * Classify a campaign/ad name to a location. "MIA & FTL" (both present) is
+ * treated as Other rather than guessed — ad-level names disambiguate it.
+ */
+function marketFromString(s: string): Market {
+  const n = s.toUpperCase();
+  const isFtl = n.includes("FTL") || n.includes("FORT LAUDERDALE");
+  const isMia = n.includes("MIA") || n.includes("MIAMI");
+  if (isFtl && !isMia) return "Fort Lauderdale";
+  if (isMia && !isFtl) return "Miami";
+  return "Other";
+}
+
+function classifyAdMarket(ad: MetaAd): Market {
+  const fromAd = marketFromString(ad.adName);
+  return fromAd !== "Other" ? fromAd : marketFromString(ad.campaignName);
+}
+
+function computeMarketSplit(ads: MetaAd[]): MarketSplitRow[] {
+  const buckets = new Map<Market, { spend: number; leads: number }>();
+  for (const ad of ads) {
+    const market = classifyAdMarket(ad);
+    const b = buckets.get(market) ?? { spend: 0, leads: 0 };
+    b.spend += ad.spend;
+    b.leads += ad.leads;
+    buckets.set(market, b);
+  }
+  const order: Market[] = ["Miami", "Fort Lauderdale", "Other"];
+  return order
+    .filter((m) => buckets.has(m))
+    .map((m) => {
+      const b = buckets.get(m) as { spend: number; leads: number };
+      return {
+        market: m,
+        spend: b.spend,
+        leads: b.leads,
+        costPerLead: b.leads > 0 ? b.spend / b.leads : null,
+      };
+    });
 }
 
 export function computeInsights(
@@ -100,6 +159,14 @@ export function computeInsights(
       )
     : null;
 
+  const topAds = [...adsWithLeads]
+    .sort(
+      (a, b) =>
+        b.leads - a.leads ||
+        (a.costPerLead as number) - (b.costPerLead as number),
+    )
+    .slice(0, 5);
+
   const zeroLeadAds = ads
     .filter((a) => a.leads === 0 && a.spend >= ZERO_LEAD_MIN_SPEND)
     .map((a) => ({ name: a.adName, spend: a.spend }))
@@ -143,10 +210,18 @@ export function computeInsights(
     overTargetAds,
     bestAd,
     worstAd,
+    topAds,
     zeroLeadAds,
     highFrequencyAds,
+    marketSplit: computeMarketSplit(ads),
     budget,
     leads,
+    mtdCpl:
+      meta.monthToDate.leads > 0
+        ? meta.monthToDate.spend / meta.monthToDate.leads
+        : null,
+    mtdSpend: meta.monthToDate.spend,
+    mtdLeads: meta.monthToDate.leads,
   };
 }
 

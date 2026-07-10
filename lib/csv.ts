@@ -177,6 +177,25 @@ export function buildReportCsv(input: ReportArtifactInput): string {
     ),
   );
 
+  // --- Location split (Miami vs Fort Lauderdale) ---
+  lines.push("");
+  lines.push(row("BY LOCATION (YESTERDAY)"));
+  lines.push(row("Location", "Spend (USD)", "Leads", "Cost per lead (USD)"));
+  if (insights && insights.marketSplit.length > 0) {
+    for (const m of insights.marketSplit) {
+      lines.push(
+        row(
+          m.market,
+          round2(m.spend),
+          Math.round(m.leads),
+          m.costPerLead === null ? "" : round2(m.costPerLead),
+        ),
+      );
+    }
+  } else {
+    lines.push(row("Not available"));
+  }
+
   // --- Targets & pacing ---
   lines.push("");
   lines.push(row("TARGETS & PACING"));
@@ -198,8 +217,16 @@ export function buildReportCsv(input: ReportArtifactInput): string {
     );
   }
   lines.push(row("Monthly lead goal", targets.monthlyLeadGoal ?? ""));
+  if (insights) {
+    lines.push(row("Leads month-to-date", Math.round(insights.mtdLeads)));
+    lines.push(
+      row(
+        "Cost per lead month-to-date (USD)",
+        insights.mtdCpl === null ? "" : round2(insights.mtdCpl),
+      ),
+    );
+  }
   if (insights?.leads) {
-    lines.push(row("Leads month-to-date", Math.round(insights.leads.mtdLeads)));
     lines.push(
       row("Expected leads by now", Math.round(insights.leads.expectedToDate)),
     );

@@ -326,6 +326,29 @@ export async function buildReportPdf(
   }
   y -= 10;
 
+  // --- By location (Miami vs Fort Lauderdale) ---
+  if (insights && insights.marketSplit.length > 0) {
+    sectionHeader("By location (yesterday)");
+    const cols = { spend: 360, leads: 460, cpl: RIGHT_EDGE };
+    ensure(18);
+    drawLeft("Location", MARGIN, 9, bold, MUTED);
+    drawRight("Spend", cols.spend, 9, bold, MUTED);
+    drawRight("Leads", cols.leads, 9, bold, MUTED);
+    drawRight("Cost/Lead", cols.cpl, 9, bold, MUTED);
+    y -= 12;
+    hline();
+    y -= 12;
+    for (const m of insights.marketSplit) {
+      ensure(15);
+      drawLeft(m.market, MARGIN, 9, font);
+      drawRight(formatMoney(m.spend), cols.spend, 9, font);
+      drawRight(formatInt(m.leads), cols.leads, 9, font);
+      drawRight(formatCostPerLead(m.costPerLead), cols.cpl, 9, font);
+      y -= 15;
+    }
+    y -= 10;
+  }
+
   // --- Targets & pacing ---
   sectionHeader("Targets & pacing");
   let pacingShown = false;
@@ -334,6 +357,12 @@ export async function buildReportPdf(
     const overall = meta?.yesterday.totals.costPerLead ?? null;
     kv("Target cost per lead", formatMoney(targets.targetCpl));
     kv("Yesterday cost per lead", overall === null ? "—" : formatMoney(overall));
+    if (insights) {
+      kv(
+        "Cost per lead (month to date)",
+        insights.mtdCpl === null ? "—" : formatMoney(insights.mtdCpl),
+      );
+    }
     y -= 4;
   }
   if (insights?.budget) {

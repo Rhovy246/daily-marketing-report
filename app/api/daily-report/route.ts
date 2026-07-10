@@ -12,6 +12,7 @@ import {
 } from "@/lib/insights";
 import { buildReportCsv } from "@/lib/csv";
 import { buildReportPdf } from "@/lib/pdf";
+import { buildLeadsCsv } from "@/lib/leads";
 
 /**
  * Daily marketing report handler.
@@ -219,6 +220,22 @@ async function buildAttachments(
       "[daily-report] PDF build failed:",
       err instanceof Error ? err.message : String(err),
     );
+  }
+
+  // New-leads follow-up list (only when HubSpot data is available).
+  if (data.hubspot) {
+    try {
+      const leadsCsv = buildLeadsCsv(data.hubspot, data.dateLabel);
+      attachments.push({
+        filename: `new-leads-${isoDate}.csv`,
+        content: Buffer.from(leadsCsv, "utf-8"),
+      });
+    } catch (err) {
+      console.error(
+        "[daily-report] Leads CSV build failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
   }
 
   return attachments;
