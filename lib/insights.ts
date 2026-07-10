@@ -85,10 +85,14 @@ export function computeInsights(
       : [];
 
   const adsWithLeads = ads.filter((a) => a.leads > 0 && a.costPerLead !== null);
+  // "Best" = the proven workhorse: the ad that drove the most leads, with a tie
+  // broken by lower cost per lead. This avoids crowning a low-volume ad that
+  // happens to have the cheapest cost per lead on one or two leads.
   const bestAd = adsWithLeads.length
-    ? adsWithLeads.reduce((best, a) =>
-        (a.costPerLead as number) < (best.costPerLead as number) ? a : best,
-      )
+    ? adsWithLeads.reduce((best, a) => {
+        if (a.leads !== best.leads) return a.leads > best.leads ? a : best;
+        return (a.costPerLead as number) < (best.costPerLead as number) ? a : best;
+      })
     : null;
   const worstAd = adsWithLeads.length
     ? adsWithLeads.reduce((worst, a) =>
@@ -152,63 +156,41 @@ export function computeInsights(
  * from the same underlying insights.
  */
 export function describeRecommendations(insights: ReportInsights): string[] {
+  // Concrete actions only. Budget / lead pacing lives in the "Targets & pacing"
+  // section, so it is deliberately NOT restated here.
   const out: string[] = [];
 
-  if (insights.budget) {
-    const { mtdSpend, monthlyBudget, overUnderPct } = insights.budget;
-    const pct = Math.round(Math.abs(overUnderPct) * 100);
-    const pace =
-      overUnderPct > 0.05
-        ? `about ${pct}% ahead of an even pace`
-        : overUnderPct < -0.05
-          ? `about ${pct}% behind an even pace`
-          : "on an even pace";
+  // Scale the proven workhorse first — it's the most useful action.
+  if (insights.bestAd && insights.bestAd.costPerLead !== null) {
+    const a = insights.bestAd;
     out.push(
-      `Budget: ${formatMoney(mtdSpend)} of ${formatMoney(monthlyBudget)} spent this month (${insights.monthLabel}) — ${pace}.`,
+      `Scale "${a.adName}" — your top lead driver yesterday (${formatInt(a.leads)} ${a.leads === 1 ? "lead" : "leads"} at ${formatMoney(a.costPerLead as number)} each). Consider shifting budget toward it.`,
     );
-  }
-
-  if (insights.leads) {
-    const { mtdLeads, goal, expectedToDate, impliedCplForGoal } = insights.leads;
-    out.push(
-      `Leads: ${formatInt(mtdLeads)} so far this month toward a goal of ${formatInt(goal)} (about ${formatInt(expectedToDate)} expected by now).`,
-    );
-    if (impliedCplForGoal !== null) {
-      out.push(
-        `Reaching ${formatInt(goal)} leads on the monthly budget would need about ${formatMoney(impliedCplForGoal)} per lead — focus on efficiency and lead quality rather than simply spending more.`,
-      );
-    }
   }
 
   if (insights.targetCpl !== null && insights.overTargetAds.length > 0) {
     const a = insights.overTargetAds[0];
     out.push(
-      `"${a.name}" is over your ${formatMoney(insights.targetCpl)} target at ${formatMoney(a.cpl)} per lead — refresh the creative or trim its budget.`,
+      `Refresh or trim "${a.name}" — at ${formatMoney(a.cpl)} per lead it's over your ${formatMoney(insights.targetCpl)} target.`,
     );
   }
 
   for (const a of insights.zeroLeadAds.slice(0, 2)) {
     out.push(
-      `"${a.name}" spent ${formatMoney(a.spend)} yesterday with no leads — consider pausing or refreshing it.`,
-    );
-  }
-
-  if (insights.bestAd && insights.bestAd.costPerLead !== null) {
-    out.push(
-      `"${insights.bestAd.adName}" is your best performer at ${formatMoney(insights.bestAd.costPerLead)} per lead — consider shifting budget toward it.`,
+      `Pause or refresh "${a.name}" — it spent ${formatMoney(a.spend)} yesterday with no leads.`,
     );
   }
 
   if (insights.highFrequencyAds.length > 0) {
     const a = insights.highFrequencyAds[0];
     out.push(
-      `"${a.name}" is being shown about ${formatDecimal(a.frequency, 1)}x per person (ad-fatigue risk) — refresh the creative before costs climb.`,
+      `Refresh the creative on "${a.name}" — it's being shown about ${formatDecimal(a.frequency, 1)}x per person (ad-fatigue risk) and costs tend to climb from here.`,
     );
   }
 
   if (out.length === 0) {
     out.push(
-      "Nothing to change today — performance is within your targets and on an even pace.",
+      "Nothing to change today — every ad is within your targets and pacing looks healthy.",
     );
   }
 

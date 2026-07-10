@@ -80,7 +80,9 @@ export function computeFlags(meta: MetaData): Flag[] {
 }
 
 export function describeFlag(flag: Flag): string {
-  return `${flag.metric} is ${flag.direction} ${Math.round(
+  // "Metric: up/down N%" reads cleanly regardless of whether the metric name is
+  // singular or plural ("Leads: up 26%" not "Leads is up 26%").
+  return `${flag.metric}: ${flag.direction} ${Math.round(
     flag.pct * 100,
-  )}% versus the 7-day daily average.`;
+  )}% vs the 7-day daily average.`;
 }
