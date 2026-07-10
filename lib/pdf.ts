@@ -4,10 +4,14 @@ import {
   describeFlag,
   formatCostPerLead,
   formatCtr,
+  formatDecimal,
   formatInt,
   formatMoney,
-  type ReportArtifactInput,
 } from "@/lib/format";
+import {
+  describeRecommendations,
+  type ReportArtifactInput,
+} from "@/lib/insights";
 
 /**
  * Builds the PDF attachment — a clean, printable one/two-page document.
@@ -154,7 +158,7 @@ export async function buildReportPdf(
     y -= 34;
   };
 
-  const { meta, hubspot, dateLabel } = input;
+  const { meta, hubspot, dateLabel, insights, targets } = input;
 
   // --- Header ---
   drawLeft("Powerhouse Gym", MARGIN, 18, bold);
@@ -273,6 +277,104 @@ export async function buildReportPdf(
     }
   } else {
     paragraph("No baseline comparison available (Meta data unavailable).", 10, font, MUTED);
+  }
+  y -= 10;
+
+  // --- Ad performance (which creatives are working) ---
+  sectionHeader("Ad performance (yesterday)");
+  if (meta) {
+    const cols = { spend: 322, leads: 372, cpl: 440, ctr: 495, freq: RIGHT_EDGE };
+    const nameMaxWidth = cols.spend - MARGIN - 55;
+
+    const headerRow = () => {
+      ensure(18);
+      drawLeft("Ad", MARGIN, 9, bold, MUTED);
+      drawRight("Spend", cols.spend, 9, bold, MUTED);
+      drawRight("Leads", cols.leads, 9, bold, MUTED);
+      drawRight("Cost/Lead", cols.cpl, 9, bold, MUTED);
+      drawRight("CTR", cols.ctr, 9, bold, MUTED);
+      drawRight("Freq", cols.freq, 9, bold, MUTED);
+      y -= 12;
+      hline();
+      y -= 12;
+    };
+
+    headerRow();
+
+    if (meta.yesterday.ads.length === 0) {
+      paragraph("No ad activity yesterday.", 10, font, MUTED);
+    } else {
+      for (const a of meta.yesterday.ads) {
+        ensure(15);
+        if (y === PAGE_H - MARGIN) headerRow();
+        drawLeft(
+          truncateToWidth(safeText(a.adName, font), nameMaxWidth, 9),
+          MARGIN,
+          9,
+          font,
+        );
+        drawRight(formatMoney(a.spend), cols.spend, 9, font);
+        drawRight(formatInt(a.leads), cols.leads, 9, font);
+        drawRight(formatCostPerLead(a.costPerLead), cols.cpl, 9, font);
+        drawRight(formatCtr(a.ctr), cols.ctr, 9, font);
+        drawRight(formatDecimal(a.frequency, 1), cols.freq, 9, font);
+        y -= 15;
+      }
+    }
+  } else {
+    paragraph("Meta ad data unavailable for this report.", 10, font, MUTED);
+  }
+  y -= 10;
+
+  // --- Targets & pacing ---
+  sectionHeader("Targets & pacing");
+  let pacingShown = false;
+  if (targets.targetCpl !== null) {
+    pacingShown = true;
+    const overall = meta?.yesterday.totals.costPerLead ?? null;
+    kv("Target cost per lead", formatMoney(targets.targetCpl));
+    kv("Yesterday cost per lead", overall === null ? "—" : formatMoney(overall));
+    y -= 4;
+  }
+  if (insights?.budget) {
+    pacingShown = true;
+    const b = insights.budget;
+    const pct = Math.round(Math.abs(b.overUnderPct) * 100);
+    const pace =
+      b.overUnderPct > 0.05
+        ? `${pct}% ahead of an even pace`
+        : b.overUnderPct < -0.05
+          ? `${pct}% behind an even pace`
+          : "on an even pace";
+    paragraph(
+      `Budget: ${formatMoney(b.mtdSpend)} of ${formatMoney(b.monthlyBudget)} this month (${insights.monthLabel}) — ${pace}.`,
+    );
+  }
+  if (insights?.leads) {
+    pacingShown = true;
+    const l = insights.leads;
+    paragraph(
+      `Leads: ${formatInt(l.mtdLeads)} of ${formatInt(l.goal)} goal this month (about ${formatInt(l.expectedToDate)} expected by now).`,
+    );
+    if (l.impliedCplForGoal !== null) {
+      paragraph(
+        `Hitting ${formatInt(l.goal)} leads on the monthly budget implies about ${formatMoney(l.impliedCplForGoal)} per lead — prioritize efficiency and quality over raw volume.`,
+      );
+    }
+  }
+  if (!pacingShown) {
+    paragraph("No targets configured.", 10, font, MUTED);
+  }
+  y -= 10;
+
+  // --- What to change today ---
+  sectionHeader("What to change today");
+  if (insights) {
+    for (const rec of describeRecommendations(insights)) {
+      paragraph(safeText(`•  ${rec}`, font));
+    }
+  } else {
+    paragraph("Recommendations unavailable (Meta data missing).", 10, font, MUTED);
   }
 
   return doc.save();

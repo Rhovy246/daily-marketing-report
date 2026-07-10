@@ -3,13 +3,17 @@ import { z } from "zod";
 /**
  * Meta (Facebook) Marketing API client.
  *
- * Fetches campaign-level ad insights for yesterday plus a 7-day baseline,
- * extracts lead counts from the `actions` array, and computes cost-per-lead.
+ * Fetches:
+ *  - yesterday's performance at BOTH campaign level (for the overview table)
+ *    and ad level (so we can rank individual creatives),
+ *  - a 7-day daily-average baseline (for the ±20% flags), and
+ *  - month-to-date spend + leads (for budget / lead-goal pacing).
+ *
+ * Lead counts come from the `actions` array; cost-per-lead is derived.
  *
  * Uses the Graph API directly via fetch (no SDK). v25.0 is the latest stable
  * version as of this writing — bump GRAPH_API_VERSION when Meta ships a newer
- * stable release (they do roughly twice a year; each version is supported for
- * ~2 years).
+ * stable release (roughly twice a year; each version supported ~2 years).
  */
 const GRAPH_API_VERSION = "v25.0";
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
@@ -20,10 +24,32 @@ const LEAD_ACTION_TYPES = new Set([
   "offsite_conversion.fb_pixel_lead",
 ]);
 
+const CAMPAIGN_FIELDS = [
+  "campaign_name",
+  "spend",
+  "impressions",
+  "clicks",
+  "ctr",
+  "cpc",
+  "actions",
+];
+
+const AD_FIELDS = [
+  "ad_name",
+  "campaign_name",
+  "spend",
+  "impressions",
+  "clicks",
+  "ctr",
+  "cpc",
+  "reach",
+  "frequency",
+  "actions",
+];
+
+const ACCOUNT_FIELDS = ["spend", "actions"];
+
 // --- Response validation ---------------------------------------------------
-// APIs return surprises: numeric fields arrive as strings, `actions` may be
-// absent, and paging may or may not be present. Keep the schema permissive and
-// narrow the numbers ourselves.
 
 const ActionSchema = z.object({
   action_type: z.string(),
@@ -32,11 +58,14 @@ const ActionSchema = z.object({
 
 const InsightRowSchema = z.object({
   campaign_name: z.string().optional(),
+  ad_name: z.string().optional(),
   spend: z.union([z.string(), z.number()]).optional(),
   impressions: z.union([z.string(), z.number()]).optional(),
   clicks: z.union([z.string(), z.number()]).optional(),
   ctr: z.union([z.string(), z.number()]).optional(),
   cpc: z.union([z.string(), z.number()]).optional(),
+  reach: z.union([z.string(), z.number()]).optional(),
+  frequency: z.union([z.string(), z.number()]).optional(),
   actions: z.array(ActionSchema).optional(),
 });
 
@@ -64,6 +93,21 @@ export interface MetaCampaign {
   costPerLead: number | null;
 }
 
+export interface MetaAd {
+  adName: string;
+  campaignName: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  reach: number;
+  /** Average times each person saw the ad (impressions / reach). */
+  frequency: number;
+  leads: number;
+  costPerLead: number | null;
+}
+
 export interface MetaTotals {
   spend: number;
   impressions: number;
@@ -72,16 +116,21 @@ export interface MetaTotals {
   costPerLead: number | null;
 }
 
+export interface MetaMonthToDate {
+  spend: number;
+  leads: number;
+}
+
 export interface MetaData {
   yesterday: {
     campaigns: MetaCampaign[];
+    ads: MetaAd[];
     totals: MetaTotals;
   };
-  /**
-   * 7-day baseline expressed as a per-day average, so the analyzer can flag
-   * yesterday's numbers against a normal day.
-   */
+  /** 7-day baseline as a per-day average, for flagging yesterday vs a normal day. */
   last7dDailyAverage: MetaTotals;
+  /** Spend + leads so far this calendar month, for pacing against targets. */
+  monthToDate: MetaMonthToDate;
 }
 
 function toNumber(value: string | number | undefined): number {
@@ -107,29 +156,19 @@ function normalizeAccountId(raw: string): string {
 }
 
 /**
- * Fetch every page of insights for a given date_preset and return the raw rows.
- * There are usually only a handful of campaigns, but we page defensively.
+ * Fetch every page of insights for a given query and return the raw rows.
+ * There are usually only a handful of rows, but we page defensively.
  */
 async function fetchInsightRows(
   accountId: string,
   accessToken: string,
-  datePreset: string,
+  opts: { datePreset: string; level: string; fields: string[] },
 ): Promise<InsightRow[]> {
-  const fields = [
-    "campaign_name",
-    "spend",
-    "impressions",
-    "clicks",
-    "ctr",
-    "cpc",
-    "actions",
-  ].join(",");
-
   const params = new URLSearchParams({
-    level: "campaign",
-    date_preset: datePreset,
-    fields,
-    limit: "100",
+    level: opts.level,
+    date_preset: opts.datePreset,
+    fields: opts.fields.join(","),
+    limit: "200",
     access_token: accessToken,
   });
 
@@ -144,7 +183,7 @@ async function fetchInsightRows(
     if (!res.ok) {
       const body = await res.text();
       throw new Error(
-        `Meta insights request failed (${res.status} ${res.statusText}) for date_preset=${datePreset}: ${body.slice(0, 500)}`,
+        `Meta insights request failed (${res.status} ${res.statusText}) for level=${opts.level} date_preset=${opts.datePreset}: ${body.slice(0, 500)}`,
       );
     }
 
@@ -172,13 +211,31 @@ function rowToCampaign(row: InsightRow): MetaCampaign {
   };
 }
 
-function sumTotals(campaigns: MetaCampaign[]): MetaTotals {
-  const totals = campaigns.reduce(
-    (acc, c) => {
-      acc.spend += c.spend;
-      acc.impressions += c.impressions;
-      acc.clicks += c.clicks;
-      acc.leads += c.leads;
+function rowToAd(row: InsightRow): MetaAd {
+  const spend = toNumber(row.spend);
+  const leads = extractLeads(row.actions);
+  return {
+    adName: row.ad_name ?? "(unnamed ad)",
+    campaignName: row.campaign_name ?? "",
+    spend,
+    impressions: toNumber(row.impressions),
+    clicks: toNumber(row.clicks),
+    ctr: toNumber(row.ctr),
+    cpc: toNumber(row.cpc),
+    reach: toNumber(row.reach),
+    frequency: toNumber(row.frequency),
+    leads,
+    costPerLead: leads > 0 ? spend / leads : null,
+  };
+}
+
+function sumTotals(rows: { spend: number; impressions: number; clicks: number; leads: number }[]): MetaTotals {
+  const totals = rows.reduce(
+    (acc, r) => {
+      acc.spend += r.spend;
+      acc.impressions += r.impressions;
+      acc.clicks += r.clicks;
+      acc.leads += r.leads;
       return acc;
     },
     { spend: 0, impressions: 0, clicks: 0, leads: 0 },
@@ -190,9 +247,9 @@ function sumTotals(campaigns: MetaCampaign[]): MetaTotals {
 }
 
 /**
- * Fetch yesterday's campaign performance plus a 7-day daily-average baseline.
- * Throws on any hard failure so the caller can catch it and mark Meta data
- * unavailable while still sending the rest of the report.
+ * Fetch yesterday's campaign + ad performance, a 7-day daily-average baseline,
+ * and month-to-date spend/leads. Throws on any hard failure so the caller can
+ * mark Meta data unavailable while still sending the rest of the report.
  */
 export async function fetchMetaData(): Promise<MetaData> {
   const accessToken = process.env.META_ACCESS_TOKEN;
@@ -206,12 +263,32 @@ export async function fetchMetaData(): Promise<MetaData> {
 
   const accountId = normalizeAccountId(rawAccountId);
 
-  const [yesterdayRows, last7dRows] = await Promise.all([
-    fetchInsightRows(accountId, accessToken, "yesterday"),
-    fetchInsightRows(accountId, accessToken, "last_7d"),
-  ]);
+  const [yesterdayCampaignRows, last7dRows, yesterdayAdRows, monthToDateRows] =
+    await Promise.all([
+      fetchInsightRows(accountId, accessToken, {
+        datePreset: "yesterday",
+        level: "campaign",
+        fields: CAMPAIGN_FIELDS,
+      }),
+      fetchInsightRows(accountId, accessToken, {
+        datePreset: "last_7d",
+        level: "campaign",
+        fields: CAMPAIGN_FIELDS,
+      }),
+      fetchInsightRows(accountId, accessToken, {
+        datePreset: "yesterday",
+        level: "ad",
+        fields: AD_FIELDS,
+      }),
+      fetchInsightRows(accountId, accessToken, {
+        datePreset: "this_month",
+        level: "account",
+        fields: ACCOUNT_FIELDS,
+      }),
+    ]);
 
-  const campaigns = yesterdayRows.map(rowToCampaign);
+  const campaigns = yesterdayCampaignRows.map(rowToCampaign);
+  const ads = yesterdayAdRows.map(rowToAd);
   const yesterdayTotals = sumTotals(campaigns);
 
   const last7dTotals = sumTotals(last7dRows.map(rowToCampaign));
@@ -224,8 +301,14 @@ export async function fetchMetaData(): Promise<MetaData> {
       last7dTotals.leads > 0 ? last7dTotals.spend / last7dTotals.leads : null,
   };
 
+  const monthToDate: MetaMonthToDate = {
+    spend: monthToDateRows.reduce((s, r) => s + toNumber(r.spend), 0),
+    leads: monthToDateRows.reduce((s, r) => s + extractLeads(r.actions), 0),
+  };
+
   return {
-    yesterday: { campaigns, totals: yesterdayTotals },
+    yesterday: { campaigns, ads, totals: yesterdayTotals },
     last7dDailyAverage,
+    monthToDate,
   };
 }

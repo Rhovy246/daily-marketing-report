@@ -3,7 +3,13 @@ import { fetchMetaData, type MetaData } from "@/lib/meta";
 import { fetchHubSpotData, type HubSpotData } from "@/lib/hubspot";
 import { analyze } from "@/lib/analyze";
 import { sendReport, sendFailureAlert, type ReportAttachment } from "@/lib/email";
-import { getYesterdayRangeET } from "@/lib/dates";
+import { getYesterdayRangeET, getMonthProgressET } from "@/lib/dates";
+import { getTargets } from "@/lib/config";
+import {
+  computeInsights,
+  type ReportArtifactInput,
+  type ReportInsights,
+} from "@/lib/insights";
 import { buildReportCsv } from "@/lib/csv";
 import { buildReportPdf } from "@/lib/pdf";
 
@@ -68,6 +74,14 @@ export async function GET(request: NextRequest): Promise<Response> {
     console.error("[daily-report] HubSpot fetch failed:", hubspotError);
   }
 
+  // Targets (from env) + computed insights/recommendations. Insights need Meta
+  // data; if Meta is unavailable they're null and the report degrades to the
+  // basic version.
+  const targets = getTargets();
+  const insights: ReportInsights | null = meta
+    ? computeInsights(meta, targets, getMonthProgressET())
+    : null;
+
   // --- 3 & 4. Analyze + send -----------------------------------------------
   try {
     // If BOTH sources failed, there is nothing meaningful to report — treat it
@@ -84,6 +98,8 @@ export async function GET(request: NextRequest): Promise<Response> {
       metaError,
       hubspot,
       hubspotError,
+      targets,
+      insights,
     });
 
     const to = isTest
@@ -95,7 +111,10 @@ export async function GET(request: NextRequest): Promise<Response> {
     // Build the PDF + CSV attachments from the same data. These are an
     // enhancement, not the core deliverable — if either fails to generate we
     // log it and still send the email (with whatever attachments succeeded).
-    const attachments = await buildAttachments({ dateLabel, meta, hubspot }, isoDate);
+    const attachments = await buildAttachments(
+      { dateLabel, meta, hubspot, insights, targets },
+      isoDate,
+    );
 
     await sendReport({ to, subject, html: email.html, attachments });
 
@@ -156,7 +175,7 @@ function requireEnv(name: string): string {
  * still goes out.
  */
 async function buildAttachments(
-  data: { dateLabel: string; meta: MetaData | null; hubspot: HubSpotData | null },
+  data: ReportArtifactInput,
   isoDate: string,
 ): Promise<ReportAttachment[]> {
   const attachments: ReportAttachment[] = [];

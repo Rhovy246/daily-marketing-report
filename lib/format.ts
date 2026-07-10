@@ -1,18 +1,9 @@
 import type { MetaData } from "@/lib/meta";
-import type { HubSpotData } from "@/lib/hubspot";
 
 /**
  * Shared formatting helpers and the ±20%-vs-baseline flag computation, used by
- * both the CSV and PDF report builders so the two attachments stay consistent
- * with each other (and with the email).
+ * the analyzer, CSV, and PDF builders so every output stays consistent.
  */
-
-/** The data both attachment builders need. Either source may be unavailable. */
-export interface ReportArtifactInput {
-  dateLabel: string;
-  meta: MetaData | null;
-  hubspot: HubSpotData | null;
-}
 
 export function formatMoney(n: number): string {
   return `$${n.toLocaleString("en-US", {

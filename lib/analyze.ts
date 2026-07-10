@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { MetaData } from "@/lib/meta";
 import type { HubSpotData } from "@/lib/hubspot";
+import type { ReportInsights } from "@/lib/insights";
+import type { Targets } from "@/lib/config";
 
 /**
  * Turns the fetched Meta + HubSpot data into a finished HTML email using the
@@ -20,6 +22,8 @@ export interface AnalyzeInput {
   metaError: string | null;
   hubspot: HubSpotData | null;
   hubspotError: string | null;
+  targets: Targets;
+  insights: ReportInsights | null;
 }
 
 export interface AnalyzedEmail {
@@ -54,7 +58,8 @@ EMAIL STRUCTURE (in this order):
 3. A per-campaign table (campaign name, spend, leads, cost per lead, clicks, click-through rate). Use a simple bordered HTML table with inline styles. If there were no campaigns with activity, say so.
 4. A one-line funnel: Meta ad spend -> Meta leads -> HubSpot contacts from paid social. Make the connection explicit.
 5. Flags: call out plainly anything that is roughly 20% or more above or below the 7-day daily average (spend, leads, or cost per lead). If nothing is notably off, say "Nothing unusual today." State the direction (up/down) and rough magnitude in plain words.
-6. One short "Worth watching today" note — a single practical observation grounded in the data.
+6. Targets & pacing (include ONLY if the JSON provides target data under "targets"/"insights"): a short, plainly-worded summary using the pre-computed values in "insights" — yesterday's cost per lead vs the target cost per lead; month-to-date spend vs the monthly budget and whether spending is ahead of or behind an even pace; and progress toward the monthly lead goal. Do not recompute or invent any of these numbers.
+7. What to change today: a bulleted list of 2-5 direct, practical recommendations grounded strictly in the data and the "insights" object — e.g. scale a well-performing ad, pause or refresh an ad that spent money with no leads or is over the cost-per-lead target, reallocate budget, or refresh an ad with high frequency (ad fatigue). Reference specific campaigns or ads by name. Phrase each as a clear suggestion (e.g. "Shift budget from X to Y", "Refresh the creative on Z"). IMPORTANT: the business prioritizes qualified leads over raw volume — never recommend simply spending more to hit the lead goal; prefer improving efficiency and lead quality. If a recommendation is not well-supported by the data, leave it out rather than padding the list.
 
 DATA AVAILABILITY:
 - If a data source is marked unavailable, include a clearly visible notice near the top in a colored box, exactly of the form: "⚠️ [Meta] data unavailable today" or "⚠️ [HubSpot] data unavailable today" (as applicable), then continue the report with whatever data IS available. Do not fabricate the missing numbers.
@@ -64,6 +69,8 @@ Format currency as US dollars. Keep the whole email skimmable in under a minute.
 function buildUserContent(input: AnalyzeInput): string {
   const payload = {
     reportDate: input.dateLabel,
+    targets: input.targets,
+    insights: input.insights,
     meta: input.meta
       ? { status: "available", ...input.meta }
       : { status: "unavailable", error: input.metaError },

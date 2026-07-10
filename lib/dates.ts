@@ -104,3 +104,47 @@ export function getYesterdayRangeET(now: Date = new Date()): YesterdayRange {
 
   return { startMillis, endMillis, label, isoDate };
 }
+
+export interface MonthProgress {
+  /** Day of the month today (ET), 1-31. */
+  dayOfMonth: number;
+  /** Total days in the current month. */
+  daysInMonth: number;
+  /** dayOfMonth / daysInMonth — how far through the month we are. */
+  fraction: number;
+  /** e.g. "July 2026". */
+  monthLabel: string;
+}
+
+/**
+ * How far through the current month we are, in America/New_York — used to
+ * pro-rate monthly budget and lead goals ("are we on pace?").
+ */
+export function getMonthProgressET(now: Date = new Date()): MonthProgress {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const map: Record<string, string> = {};
+  for (const p of parts) map[p.type] = p.value;
+
+  const year = Number(map.year);
+  const monthIndex = Number(map.month) - 1; // 0-based
+  const dayOfMonth = Number(map.day);
+  const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+
+  const monthLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    month: "long",
+    year: "numeric",
+  }).format(now);
+
+  return {
+    dayOfMonth,
+    daysInMonth,
+    fraction: dayOfMonth / daysInMonth,
+    monthLabel,
+  };
+}

@@ -1,4 +1,8 @@
-import { round2, type ReportArtifactInput } from "@/lib/format";
+import { round2 } from "@/lib/format";
+import {
+  describeRecommendations,
+  type ReportArtifactInput,
+} from "@/lib/insights";
 
 /**
  * Builds the spreadsheet attachment (CSV — opens directly in Excel / Google
@@ -20,7 +24,7 @@ function row(...fields: (string | number)[]): string {
 }
 
 export function buildReportCsv(input: ReportArtifactInput): string {
-  const { meta, hubspot, dateLabel } = input;
+  const { meta, hubspot, dateLabel, insights, targets } = input;
   const lines: string[] = [];
 
   lines.push(row("Powerhouse Gym - Daily Marketing Report"));
@@ -101,6 +105,50 @@ export function buildReportCsv(input: ReportArtifactInput): string {
   }
   lines.push("");
 
+  // --- Per-ad table (which creatives are working) ---
+  lines.push(row("ADS (YESTERDAY)"));
+  lines.push(
+    row(
+      "Ad",
+      "Campaign",
+      "Spend (USD)",
+      "Impressions",
+      "Clicks",
+      "CTR (%)",
+      "CPC (USD)",
+      "Reach",
+      "Frequency",
+      "Leads",
+      "Cost per lead (USD)",
+    ),
+  );
+  if (meta) {
+    if (meta.yesterday.ads.length === 0) {
+      lines.push(row("No ad activity yesterday"));
+    } else {
+      for (const a of meta.yesterday.ads) {
+        lines.push(
+          row(
+            a.adName,
+            a.campaignName,
+            round2(a.spend),
+            Math.round(a.impressions),
+            Math.round(a.clicks),
+            round2(a.ctr),
+            round2(a.cpc),
+            Math.round(a.reach),
+            round2(a.frequency),
+            Math.round(a.leads),
+            a.costPerLead === null ? "" : round2(a.costPerLead),
+          ),
+        );
+      }
+    }
+  } else {
+    lines.push(row("Meta ad data unavailable"));
+  }
+  lines.push("");
+
   // --- 7-day baseline ---
   lines.push(row("7-DAY DAILY AVERAGE (BASELINE)"));
   lines.push(row("Metric", "Value"));
@@ -128,6 +176,51 @@ export function buildReportCsv(input: ReportArtifactInput): string {
       hubspot ? hubspot.paidSocialContactCount : "n/a",
     ),
   );
+
+  // --- Targets & pacing ---
+  lines.push("");
+  lines.push(row("TARGETS & PACING"));
+  lines.push(row("Metric", "Value"));
+  lines.push(row("Target cost per lead (USD)", targets.targetCpl ?? ""));
+  lines.push(
+    row(
+      "Yesterday cost per lead (USD)",
+      meta && meta.yesterday.totals.costPerLead !== null
+        ? round2(meta.yesterday.totals.costPerLead)
+        : "",
+    ),
+  );
+  lines.push(row("Monthly ad budget (USD)", targets.monthlyBudget ?? ""));
+  if (insights?.budget) {
+    lines.push(row("Spend month-to-date (USD)", round2(insights.budget.mtdSpend)));
+    lines.push(
+      row("Expected spend by now (USD)", round2(insights.budget.expectedToDate)),
+    );
+  }
+  lines.push(row("Monthly lead goal", targets.monthlyLeadGoal ?? ""));
+  if (insights?.leads) {
+    lines.push(row("Leads month-to-date", Math.round(insights.leads.mtdLeads)));
+    lines.push(
+      row("Expected leads by now", Math.round(insights.leads.expectedToDate)),
+    );
+    if (insights.leads.impliedCplForGoal !== null) {
+      lines.push(
+        row(
+          "CPL needed to hit goal on budget (USD)",
+          round2(insights.leads.impliedCplForGoal),
+        ),
+      );
+    }
+  }
+
+  // --- What to change today ---
+  lines.push("");
+  lines.push(row("WHAT TO CHANGE TODAY"));
+  if (insights) {
+    for (const rec of describeRecommendations(insights)) lines.push(row(rec));
+  } else {
+    lines.push(row("Recommendations unavailable (Meta data missing)."));
+  }
 
   // CRLF line endings are the safest for Excel across platforms.
   return lines.join("\r\n") + "\r\n";

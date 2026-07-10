@@ -34,11 +34,13 @@ Vercel Cron ──GET──▶ /api/daily-report
 | File | Responsibility |
 | --- | --- |
 | `app/api/daily-report/route.ts` | Main handler (GET). Auth, orchestration, resilience, alerts. |
-| `lib/meta.ts` | Meta Graph API v25.0 client — campaign insights, lead extraction, cost-per-lead. |
+| `lib/meta.ts` | Meta Graph API v25.0 client — campaign + ad-level insights, frequency, month-to-date, cost-per-lead. |
 | `lib/hubspot.ts` | HubSpot CRM v3 search — new contacts, paid-social attribution. |
-| `lib/analyze.ts` | Anthropic Messages API (`claude-sonnet-4-6`) — turns data into an email. |
+| `lib/config.ts` | Optional performance targets (CPL / lead goal / budget) from env vars. |
+| `lib/insights.ts` | Computes pacing + the "what to change" recommendations from the data. |
+| `lib/analyze.ts` | Anthropic Messages API (`claude-sonnet-4-6`) — turns data + insights into an email. |
 | `lib/email.ts` | Resend — report send + failure alerts. |
-| `lib/dates.ts` | "Yesterday in America/New_York" (DST-aware, no date library). |
+| `lib/dates.ts` | "Yesterday in America/New_York" + month pacing (DST-aware, no date library). |
 | `vercel.json` | Cron config. |
 
 Dependencies are intentionally minimal: **`zod`** (validating flaky external API
@@ -73,6 +75,9 @@ inline notes on where to generate each one.
 | `REPORT_TO_EMAIL` | Recipient of the daily report (the boss). |
 | `REPORT_FROM_EMAIL` | Verified Resend sender, e.g. `Powerhouse Reports <reports@yourdomain.com>`. |
 | `ALERT_EMAIL` | Your email — failure alerts and `?test=1` dry-runs go here. |
+| `TARGET_CPL` | *(optional)* Target cost per lead in USD, e.g. `10`. Powers pacing + advice. |
+| `MONTHLY_LEAD_GOAL` | *(optional)* Monthly lead goal, e.g. `1000`. |
+| `MONTHLY_AD_BUDGET` | *(optional)* Monthly ad budget in USD, e.g. `6500`. |
 | `CRON_SECRET` | Random secret. Generate with `openssl rand -hex 32`. |
 
 > **About `CRON_SECRET`:** when this variable is set on a Vercel project, Vercel
