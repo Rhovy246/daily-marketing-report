@@ -5,8 +5,11 @@ import type { ReportInsights } from "@/lib/insights";
 import type { Targets } from "@/lib/config";
 import { fetchWithTimeout } from "@/lib/http";
 
-// Ceiling for the Claude generation call.
-const REQUEST_TIMEOUT_MS = 40000;
+// Ceiling for the Claude generation call. Kept comfortably below the function's
+// overall budget so a slow generation fails fast with an alert rather than
+// tripping the platform's hard timeout. Data fetch (parallel) + this + send must
+// stay under the serverless limit.
+const REQUEST_TIMEOUT_MS = 35000;
 
 /**
  * Turns the fetched Meta + HubSpot data into a finished HTML email using the
@@ -17,7 +20,14 @@ const REQUEST_TIMEOUT_MS = 40000;
  * the model sees comes from the fetched data.
  */
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-sonnet-4-6";
+// The heavy analysis (flags, pacing, recommendations) is computed in code and
+// handed to the model — its job here is mostly to format those results into a
+// clean HTML email. A fast model does that well and, critically, keeps the whole
+// pipeline inside the serverless time budget (a larger model generating this
+// much inline-styled HTML runs ~45-55s, which overruns the function limit).
+// If the function limit is raised (e.g. Vercel Pro), this can move back to
+// "claude-sonnet-4-6" for slightly richer prose.
+const MODEL = "claude-haiku-4-5";
 // The email now includes topline, a campaign table, funnel, flags, a
 // targets/pacing summary, and a recommendations list. Inline-styled HTML tables
 // are token-heavy, so give the model comfortable headroom — 3000 truncated the
