@@ -14,7 +14,11 @@ import type { Targets } from "@/lib/config";
  */
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-6";
-const MAX_TOKENS = 3000;
+// The email now includes topline, a campaign table, funnel, flags, a
+// targets/pacing summary, and a recommendations list. Inline-styled HTML tables
+// are token-heavy, so give the model comfortable headroom — 3000 truncated the
+// email mid-render once the later sections were added.
+const MAX_TOKENS = 8000;
 
 export interface AnalyzeInput {
   dateLabel: string;
@@ -153,6 +157,15 @@ export async function analyze(input: AnalyzeInput): Promise<AnalyzedEmail> {
   if (!text.trim()) {
     throw new Error(
       `Anthropic returned no text content (stop_reason=${parsed.stop_reason ?? "unknown"}).`,
+    );
+  }
+
+  // The email would be truncated mid-HTML if the model ran out of output
+  // budget. Surface it loudly in the logs so we can raise MAX_TOKENS rather than
+  // silently ship a half-rendered email.
+  if (parsed.stop_reason === "max_tokens") {
+    console.warn(
+      "[analyze] WARNING: email hit max_tokens and may be truncated — raise MAX_TOKENS.",
     );
   }
 
