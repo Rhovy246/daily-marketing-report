@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { fetchWithTimeout } from "@/lib/http";
+
+// Per-request ceiling for each Meta call (they run in parallel).
+const REQUEST_TIMEOUT_MS = 20000;
 
 /**
  * Meta (Facebook) Marketing API client.
@@ -179,7 +183,7 @@ async function fetchInsightRows(
 
   while (url && guard < 25) {
     guard += 1;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url, {}, REQUEST_TIMEOUT_MS);
     if (!res.ok) {
       const body = await res.text();
       throw new Error(

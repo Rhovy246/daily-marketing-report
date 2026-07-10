@@ -3,6 +3,10 @@ import type { MetaData } from "@/lib/meta";
 import type { HubSpotData } from "@/lib/hubspot";
 import type { ReportInsights } from "@/lib/insights";
 import type { Targets } from "@/lib/config";
+import { fetchWithTimeout } from "@/lib/http";
+
+// Ceiling for the Claude generation call.
+const REQUEST_TIMEOUT_MS = 40000;
 
 /**
  * Turns the fetched Meta + HubSpot data into a finished HTML email using the
@@ -119,25 +123,29 @@ export async function analyze(input: AnalyzeInput): Promise<AnalyzedEmail> {
     throw new Error("Missing ANTHROPIC_API_KEY environment variable.");
   }
 
-  const res = await fetch(ANTHROPIC_API, {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
+  const res = await fetchWithTimeout(
+    ANTHROPIC_API,
+    {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        system: SYSTEM_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: buildUserContent(input),
+          },
+        ],
+      }),
     },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: buildUserContent(input),
-        },
-      ],
-    }),
-  });
+    REQUEST_TIMEOUT_MS,
+  );
 
   if (!res.ok) {
     const text = await res.text();

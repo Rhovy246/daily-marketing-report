@@ -57,20 +57,35 @@ export async function GET(request: NextRequest): Promise<Response> {
   let hubspot: HubSpotData | null = null;
   let hubspotError: string | null = null;
 
-  try {
-    meta = await fetchMetaData();
+  // Fetch both sources concurrently — they're independent, so running them in
+  // parallel roughly halves the data-fetch time and keeps us well inside the
+  // serverless time budget. allSettled preserves each source's success/failure
+  // independently so one failing never affects the other.
+  const [metaResult, hubspotResult] = await Promise.allSettled([
+    fetchMetaData(),
+    fetchHubSpotData(),
+  ]);
+
+  if (metaResult.status === "fulfilled") {
+    meta = metaResult.value;
     // Log the raw analyzed data so Vercel logs show exactly what Claude saw.
     console.log("[daily-report] Meta data:", JSON.stringify(meta));
-  } catch (err) {
-    metaError = err instanceof Error ? err.message : String(err);
+  } else {
+    metaError =
+      metaResult.reason instanceof Error
+        ? metaResult.reason.message
+        : String(metaResult.reason);
     console.error("[daily-report] Meta fetch failed:", metaError);
   }
 
-  try {
-    hubspot = await fetchHubSpotData();
+  if (hubspotResult.status === "fulfilled") {
+    hubspot = hubspotResult.value;
     console.log("[daily-report] HubSpot data:", JSON.stringify(hubspot));
-  } catch (err) {
-    hubspotError = err instanceof Error ? err.message : String(err);
+  } else {
+    hubspotError =
+      hubspotResult.reason instanceof Error
+        ? hubspotResult.reason.message
+        : String(hubspotResult.reason);
     console.error("[daily-report] HubSpot fetch failed:", hubspotError);
   }
 

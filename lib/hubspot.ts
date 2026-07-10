@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { getYesterdayRangeET } from "@/lib/dates";
+import { fetchWithTimeout } from "@/lib/http";
+
+// Per-request ceiling for each HubSpot search call.
+const REQUEST_TIMEOUT_MS = 20000;
 
 /**
  * HubSpot CRM client.
@@ -126,14 +130,18 @@ async function searchCreatedYesterday(
       ...(after ? { after } : {}),
     };
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      REQUEST_TIMEOUT_MS,
+    );
 
     if (!res.ok) {
       const text = await res.text();
