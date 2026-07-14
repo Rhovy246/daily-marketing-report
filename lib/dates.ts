@@ -114,6 +114,8 @@ export interface MonthProgress {
   fraction: number;
   /** e.g. "July 2026". */
   monthLabel: string;
+  /** Start of the current month (00:00 ET) as a UTC epoch — for createdate filters. */
+  monthStartMillis: number;
 }
 
 /**
@@ -146,5 +148,24 @@ export function getMonthProgressET(now: Date = new Date()): MonthProgress {
     daysInMonth,
     fraction: dayOfMonth / daysInMonth,
     monthLabel,
+    monthStartMillis: etWallTimeToUtcMillis(year, monthIndex + 1, 1, 0, 0, 0, 0),
+  };
+}
+
+/**
+ * UTC-midnight range for yesterday's ET calendar date. HubSpot `date`-type
+ * properties (like `member_since`) store values as **midnight UTC**, so filtering
+ * them by the ET epoch range would be off by the timezone offset. This returns
+ * the correct range for matching a date property to "yesterday".
+ */
+export function getYesterdayDateRangeUTC(now: Date = new Date()): {
+  startMillis: number;
+  endMillis: number;
+} {
+  const { isoDate } = getYesterdayRangeET(now);
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return {
+    startMillis: Date.UTC(y, m - 1, d, 0, 0, 0, 0),
+    endMillis: Date.UTC(y, m - 1, d, 23, 59, 59, 999),
   };
 }

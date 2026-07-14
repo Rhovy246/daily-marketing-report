@@ -264,6 +264,26 @@ export async function buildReportPdf(
   );
   y -= 10;
 
+  // --- Members & conversion (CRM) ---
+  if (hubspot) {
+    sectionHeader("Members & conversion");
+    const m = hubspot.newMembers;
+    paragraph(
+      `New members yesterday: ${formatInt(m.total)} — ${formatInt(m.fromPaidSocial)} originally came from paid social.`,
+    );
+    paragraph(
+      "Members who join now usually came from ads placed weeks earlier, so this reflects the ads' lifetime return, not same-day.",
+      9,
+      font,
+      MUTED,
+    );
+    const f = hubspot.paidSocialFunnel;
+    paragraph(
+      `This month (${f.monthLabel}): ${formatInt(f.leads)} paid-social leads  ->  ${formatInt(f.visited)} have visited  ->  ${formatInt(f.members)} became members.`,
+    );
+    y -= 10;
+  }
+
   // --- Flags ---
   sectionHeader("Flags vs 7-day average");
   if (meta) {

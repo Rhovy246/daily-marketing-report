@@ -177,6 +177,27 @@ export function buildReportCsv(input: ReportArtifactInput): string {
     ),
   );
 
+  // --- Members & conversion (CRM) ---
+  lines.push("");
+  lines.push(row("MEMBERS & CONVERSION"));
+  lines.push(row("Metric", "Value"));
+  if (hubspot) {
+    lines.push(row("New members yesterday", hubspot.newMembers.total));
+    lines.push(
+      row("New members from paid social", hubspot.newMembers.fromPaidSocial),
+    );
+    lines.push(
+      row(
+        `Paid-social leads this month (${hubspot.paidSocialFunnel.monthLabel})`,
+        hubspot.paidSocialFunnel.leads,
+      ),
+    );
+    lines.push(row("...of those, visited", hubspot.paidSocialFunnel.visited));
+    lines.push(row("...of those, became members", hubspot.paidSocialFunnel.members));
+  } else {
+    lines.push(row("HubSpot CRM data", "UNAVAILABLE"));
+  }
+
   // --- Location split (Miami vs Fort Lauderdale) ---
   lines.push("");
   lines.push(row("BY LOCATION (YESTERDAY)"));
