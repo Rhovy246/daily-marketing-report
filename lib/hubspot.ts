@@ -1,26 +1,21 @@
 import { z } from "zod";
-import {
-  getYesterdayRangeET,
-  getYesterdayDateRangeUTC,
-  getMonthProgressET,
-} from "@/lib/dates";
+import { getYesterdayRangeET, getYesterdayDateRangeUTC } from "@/lib/dates";
 import { fetchWithTimeout } from "@/lib/http";
 
 /**
  * HubSpot CRM client.
  *
- * Pulls three things:
- *  - contacts created yesterday (new leads + paid-social attribution + the
- *    follow-up list),
- *  - new members yesterday (contacts whose `member_since` date is yesterday) and
- *    how many came from paid social — the ad -> member ROI signal,
- *  - the paid-social lead -> member conversion funnel for the current month.
+ * Pulls ONE thing: how many people became members yesterday, and how many of
+ * them originally came from paid social — the reliable ad -> member ROI signal.
  *
- * Deals are intentionally NOT fetched (Powerhouse doesn't track them), so the
- * app only needs the `crm.objects.contacts.read` scope.
+ * It uses `member_since` (a real join event) rather than HubSpot's `createdate`.
+ * Create Date proved unreliable in this account (a Salesforce sync re-creates
+ * records, stamping today's date on months-old leads), so all Create Date–based
+ * "new lead / new contact" metrics were removed rather than ship numbers we
+ * can't trust.
  *
- * Uses the CRM v3 search API directly via fetch (no SDK). Search endpoints are
- * paginated with an `after` cursor; page sizes cap at 100.
+ * Only needs the `crm.objects.contacts.read` scope. Uses the CRM v3 search API
+ * directly via fetch (no SDK).
  */
 const HUBSPOT_BASE = "https://api.hubapi.com";
 const PAGE_LIMIT = 100;
@@ -37,40 +32,12 @@ const PAID_SOCIAL_HINTS = [
   "ig",
 ];
 
-// HubSpot values that mean "this contact became a member".
-const MEMBER_LIFECYCLE_STAGE = "customer"; // "Member" maps to lifecyclestage "customer"
-// Lead statuses that mean the person physically came in (front-desk check-in is
-// auto-recorded as "Visited"; a member has visited too).
-const VISITED_LEAD_STATUSES = new Set(["Visited", "Converted to Member"]);
-
-// --- Response validation ---------------------------------------------------
-
-const ContactResultSchema = z.object({
-  id: z.string(),
-  properties: z.object({
-    firstname: z.string().nullish(),
-    lastname: z.string().nullish(),
-    email: z.string().nullish(),
-    hs_analytics_source: z.string().nullish(),
-    hs_latest_source: z.string().nullish(),
-    createdate: z.string().nullish(),
-  }),
-});
-
 const MemberResultSchema = z.object({
   id: z.string(),
   properties: z.object({
     hs_analytics_source: z.string().nullish(),
     hs_latest_source: z.string().nullish(),
     member_since: z.string().nullish(),
-  }),
-});
-
-const FunnelResultSchema = z.object({
-  id: z.string(),
-  properties: z.object({
-    lifecyclestage: z.string().nullish(),
-    hs_lead_status: z.string().nullish(),
   }),
 });
 
@@ -84,42 +51,15 @@ const SearchPageSchema = z.object({
     .optional(),
 });
 
-// --- Shapes we hand to the analyzer ---------------------------------------
-
-export interface HubSpotContact {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  email: string | null;
-  analyticsSource: string | null;
-  latestSource: string | null;
-  createdAt: string | null;
-}
-
 export interface NewMembers {
   total: number;
   fromPaidSocial: number;
 }
 
-export interface PaidSocialFunnel {
-  monthLabel: string;
-  /** Paid-social leads created this month. */
-  leads: number;
-  /** …of which, how many have visited (front-desk check-in) or beyond. */
-  visited: number;
-  /** …of which, how many became members. */
-  members: number;
-}
-
 export interface HubSpotData {
   dateLabel: string;
-  contacts: HubSpotContact[];
-  newContactCount: number;
-  paidSocialContactCount: number;
   /** People who became members yesterday (by `member_since`) + ad-sourced share. */
   newMembers: NewMembers;
-  /** This-month paid-social lead -> visited -> member conversion. */
-  paidSocialFunnel: PaidSocialFunnel;
 }
 
 function sourceIsPaidSocial(
@@ -134,10 +74,6 @@ function sourceIsPaidSocial(
   );
 }
 
-/**
- * Run a paginated CRM contacts search with the given filter groups + properties.
- * Returns the raw result objects across all pages.
- */
 async function searchContacts(
   filterGroups: unknown[],
   properties: string[],
@@ -186,133 +122,50 @@ async function searchContacts(
   return results;
 }
 
-function createdateBetween(startMillis: number, endMillis: number) {
-  return [
-    { propertyName: "createdate", operator: "GTE", value: String(startMillis) },
-    { propertyName: "createdate", operator: "LTE", value: String(endMillis) },
-  ];
-}
-
 export async function fetchHubSpotData(): Promise<HubSpotData> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) {
     throw new Error("Missing HUBSPOT_ACCESS_TOKEN environment variable.");
   }
 
-  const { startMillis, endMillis, label } = getYesterdayRangeET();
+  const { label } = getYesterdayRangeET();
+  // member_since is a date property -> match against the UTC-midnight day range.
   const memberDay = getYesterdayDateRangeUTC();
-  const month = getMonthProgressET();
 
-  const [rawContacts, rawMembers, rawFunnel] = await Promise.all([
-    // 1. New leads created yesterday (for the count + follow-up list).
-    searchContacts(
-      [{ filters: createdateBetween(startMillis, endMillis) }],
-      [
-        "firstname",
-        "lastname",
-        "email",
-        "hs_analytics_source",
-        "hs_latest_source",
-        "createdate",
-      ],
-      token,
-    ),
-    // 2. New members yesterday (member_since is a date property -> UTC-day range).
-    searchContacts(
-      [
-        {
-          filters: [
-            {
-              propertyName: "member_since",
-              operator: "GTE",
-              value: String(memberDay.startMillis),
-            },
-            {
-              propertyName: "member_since",
-              operator: "LTE",
-              value: String(memberDay.endMillis),
-            },
-          ],
-        },
-      ],
-      ["hs_analytics_source", "hs_latest_source", "member_since"],
-      token,
-    ),
-    // 3. Paid-social leads created this month (for the conversion funnel).
-    //    Two OR'd groups: paid social can be recorded on either source field.
-    searchContacts(
-      [
-        {
-          filters: [
-            { propertyName: "createdate", operator: "GTE", value: String(month.monthStartMillis) },
-            { propertyName: "hs_analytics_source", operator: "EQ", value: "PAID_SOCIAL" },
-          ],
-        },
-        {
-          filters: [
-            { propertyName: "createdate", operator: "GTE", value: String(month.monthStartMillis) },
-            { propertyName: "hs_latest_source", operator: "EQ", value: "PAID_SOCIAL" },
-          ],
-        },
-      ],
-      ["lifecyclestage", "hs_lead_status"],
-      token,
-    ),
-  ]);
+  const rawMembers = await searchContacts(
+    [
+      {
+        filters: [
+          {
+            propertyName: "member_since",
+            operator: "GTE",
+            value: String(memberDay.startMillis),
+          },
+          {
+            propertyName: "member_since",
+            operator: "LTE",
+            value: String(memberDay.endMillis),
+          },
+        ],
+      },
+    ],
+    ["hs_analytics_source", "hs_latest_source", "member_since"],
+    token,
+  );
 
-  // --- Leads created yesterday ---
-  const contacts: HubSpotContact[] = rawContacts.map((raw) => {
-    const parsed = ContactResultSchema.parse(raw);
-    return {
-      id: parsed.id,
-      firstName: parsed.properties.firstname ?? null,
-      lastName: parsed.properties.lastname ?? null,
-      email: parsed.properties.email ?? null,
-      analyticsSource: parsed.properties.hs_analytics_source ?? null,
-      latestSource: parsed.properties.hs_latest_source ?? null,
-      createdAt: parsed.properties.createdate ?? null,
-    };
-  });
-  const paidSocialContactCount = contacts.filter((c) =>
-    sourceIsPaidSocial(c.analyticsSource, c.latestSource),
-  ).length;
-
-  // --- New members yesterday ---
   const members = rawMembers.map((raw) => MemberResultSchema.parse(raw));
   const newMembers: NewMembers = {
     total: members.length,
     fromPaidSocial: members.filter((m) =>
-      sourceIsPaidSocial(m.properties.hs_analytics_source, m.properties.hs_latest_source),
+      sourceIsPaidSocial(
+        m.properties.hs_analytics_source,
+        m.properties.hs_latest_source,
+      ),
     ).length,
-  };
-
-  // --- Paid-social conversion funnel (this month) ---
-  const funnelRows = rawFunnel.map((raw) => FunnelResultSchema.parse(raw));
-  let visited = 0;
-  let membersInFunnel = 0;
-  for (const row of funnelRows) {
-    const isMember = row.properties.lifecyclestage === MEMBER_LIFECYCLE_STAGE;
-    const isVisited =
-      isMember ||
-      (row.properties.hs_lead_status
-        ? VISITED_LEAD_STATUSES.has(row.properties.hs_lead_status)
-        : false);
-    if (isVisited) visited += 1;
-    if (isMember) membersInFunnel += 1;
-  }
-  const paidSocialFunnel: PaidSocialFunnel = {
-    monthLabel: month.monthLabel,
-    leads: funnelRows.length,
-    visited,
-    members: membersInFunnel,
   };
 
   return {
     dateLabel: label,
-    contacts,
-    newContactCount: contacts.length,
-    paidSocialContactCount,
     newMembers,
-    paidSocialFunnel,
   };
 }

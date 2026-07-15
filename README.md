@@ -6,7 +6,7 @@ No database, no UI — just a Vercel Cron job that runs once each morning.
 Every day at **8:00 AM Eastern** it:
 
 1. Fetches **yesterday's Meta (Facebook/Instagram) ad performance** and a 7-day baseline.
-2. Fetches **yesterday's HubSpot CRM activity** (new contacts).
+2. Fetches **yesterday's HubSpot new members** (via `member_since`) + how many came from paid social.
 3. Has **Claude** write a plain-English analysis email.
 4. Sends it to the boss via **Resend**.
 
@@ -35,7 +35,7 @@ Vercel Cron ──GET──▶ /api/daily-report
 | --- | --- |
 | `app/api/daily-report/route.ts` | Main handler (GET). Auth, orchestration, resilience, alerts. |
 | `lib/meta.ts` | Meta Graph API v25.0 client — campaign + ad-level insights, frequency, month-to-date, cost-per-lead. |
-| `lib/hubspot.ts` | HubSpot CRM v3 search — new contacts, paid-social attribution. |
+| `lib/hubspot.ts` | HubSpot CRM v3 search — new members yesterday (`member_since`) + paid-social share. |
 | `lib/config.ts` | Optional performance targets (CPL / lead goal / budget) from env vars. |
 | `lib/insights.ts` | Computes pacing + the "what to change" recommendations from the data. |
 | `lib/analyze.ts` | Anthropic Messages API (`claude-sonnet-4-6`) — turns data + insights into an email. |

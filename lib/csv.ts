@@ -46,12 +46,6 @@ export function buildReportCsv(input: ReportArtifactInput): string {
   } else {
     lines.push(row("Meta ad data", "UNAVAILABLE"));
   }
-  if (hubspot) {
-    lines.push(row("New contacts", hubspot.newContactCount));
-    lines.push(row("Contacts from paid social", hubspot.paidSocialContactCount));
-  } else {
-    lines.push(row("HubSpot CRM data", "UNAVAILABLE"));
-  }
   lines.push("");
 
   // --- Per-campaign table ---
@@ -164,36 +158,14 @@ export function buildReportCsv(input: ReportArtifactInput): string {
   }
   lines.push("");
 
-  // --- Funnel: spend -> leads -> paid-social contacts ---
-  lines.push(row("FUNNEL"));
-  lines.push(
-    row("Meta ad spend (USD)", meta ? round2(meta.yesterday.totals.spend) : "n/a"),
-  );
-  lines.push(row("Meta leads", meta ? Math.round(meta.yesterday.totals.leads) : "n/a"));
-  lines.push(
-    row(
-      "HubSpot contacts from paid social",
-      hubspot ? hubspot.paidSocialContactCount : "n/a",
-    ),
-  );
-
-  // --- Members & conversion (CRM) ---
-  lines.push("");
-  lines.push(row("MEMBERS & CONVERSION"));
+  // --- New members (CRM) ---
+  lines.push(row("NEW MEMBERS"));
   lines.push(row("Metric", "Value"));
   if (hubspot) {
     lines.push(row("New members yesterday", hubspot.newMembers.total));
     lines.push(
       row("New members from paid social", hubspot.newMembers.fromPaidSocial),
     );
-    lines.push(
-      row(
-        `Paid-social leads this month (${hubspot.paidSocialFunnel.monthLabel})`,
-        hubspot.paidSocialFunnel.leads,
-      ),
-    );
-    lines.push(row("...of those, visited", hubspot.paidSocialFunnel.visited));
-    lines.push(row("...of those, became members", hubspot.paidSocialFunnel.members));
   } else {
     lines.push(row("HubSpot CRM data", "UNAVAILABLE"));
   }

@@ -181,12 +181,6 @@ export async function buildReportPdf(
   } else {
     kv("Meta ad data", "Unavailable");
   }
-  if (hubspot) {
-    kv("New contacts", formatInt(hubspot.newContactCount));
-    kv("Contacts from paid social", formatInt(hubspot.paidSocialContactCount));
-  } else {
-    kv("HubSpot CRM data", "Unavailable");
-  }
   y -= 8;
 
   // --- Campaign table ---
@@ -254,19 +248,9 @@ export async function buildReportPdf(
   }
   y -= 10;
 
-  // --- Funnel ---
-  sectionHeader("Funnel");
-  const spendStr = meta ? formatMoney(meta.yesterday.totals.spend) : "n/a";
-  const leadsStr = meta ? formatInt(meta.yesterday.totals.leads) : "n/a";
-  const paidStr = hubspot ? formatInt(hubspot.paidSocialContactCount) : "n/a";
-  paragraph(
-    `Meta ad spend ${spendStr}  ->  Meta leads ${leadsStr}  ->  HubSpot contacts from paid social ${paidStr}`,
-  );
-  y -= 10;
-
-  // --- Members & conversion (CRM) ---
+  // --- New members (CRM) ---
   if (hubspot) {
-    sectionHeader("Members & conversion");
+    sectionHeader("New members");
     const m = hubspot.newMembers;
     paragraph(
       `New members yesterday: ${formatInt(m.total)} — ${formatInt(m.fromPaidSocial)} originally came from paid social.`,
@@ -276,10 +260,6 @@ export async function buildReportPdf(
       9,
       font,
       MUTED,
-    );
-    const f = hubspot.paidSocialFunnel;
-    paragraph(
-      `This month (${f.monthLabel}): ${formatInt(f.leads)} paid-social leads  ->  ${formatInt(f.visited)} have visited  ->  ${formatInt(f.members)} became members.`,
     );
     y -= 10;
   }
